@@ -1,0 +1,304 @@
+version: "3.9"
+
+services:
+
+  # ---------- API GATEWAY ----------
+  api-gateway:
+    image: nginx:1.27-alpine
+    container_name: mc-api-gateway
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - usuarios
+      - productos
+      - inventario
+      - pedidos
+      - pagos
+      - resenas
+      - notificaciones
+      - clases
+      - reportes
+    networks:
+      - marana-net
+
+  # ---------- IDENTIDAD ----------
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: mc-keycloak
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8081:8080"
+    networks:
+      - marana-net
+
+  # ---------- MICROSERVICIOS ----------
+  usuarios:
+    build: ./services/usuarios
+    container_name: mc-usuarios
+    environment:
+      DB_HOST: db-usuarios
+      DB_NAME: usuarios
+      DB_USER: mc_user
+      DB_PASSWORD: mc_pass
+      JWT_ISSUER: keycloak
+    depends_on:
+      - db-usuarios
+    networks:
+      - marana-net
+
+  productos:
+    build: ./services/productos
+    container_name: mc-productos
+    environment:
+      DB_HOST: db-productos
+      DB_NAME: productos
+      DB_USER: mc_user
+      DB_PASSWORD: mc_pass
+      REDIS_HOST: redis
+    depends_on:
+      - db-productos
+      - redis
+    networks:
+      - marana-net
+
+  inventario:
+    build: ./services/inventario
+    container_name: mc-inventario
+    environment:
+      DB_HOST: db-inventario
+      DB_NAME: inventario
+      DB_USER: mc_user
+      DB_PASSWORD: mc_pass
+      RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - db-inventario
+      - rabbitmq
+    networks:
+      - marana-net
+
+  pedidos:
+    build: ./services/pedidos
+    container_name: mc-pedidos
+    environment:
+      DB_HOST: db-pedidos
+      DB_NAME: pedidos
+      DB_USER: mc_user
+      DB_PASSWORD: mc_pass
+      RABBITMQ_HOST: rabbitmq
+      PRODUCTOS_URL: http://productos:3000
+      INVENTARIO_URL: http://inventario:3000
+      USUARIOS_URL: http://usuarios:3000
+    depends_on:
+      - db-pedidos
+      - rabbitmq
+    networks:
+      - marana-net
+
+  pagos:
+    build: ./services/pagos
+    container_name: mc-pagos
+    environment:
+      DB_HOST: db-pagos
+      DB_NAME: pagos
+      DB_USER: mc_user
+      DB_PASSWORD: mc_pass
+      RABBITMQ_HOST: rabbitmq
+      PEDIDOS_URL: http://pedidos:3000
+    depends_on:
+      - db-pagos
+      - rabbitmq
+    networks:
+      - marana-net
+
+  resenas:
+    build: ./services/resenas
+    container_name: mc-resenas
+    environment:
+      MONGO_HOST: db-resenas
+      MONGO_DB: resenas
+      PEDIDOS_URL: http://pedidos:3000
+      PRODUCTOS_URL: http://productos:3000
+    depends_on:
+      - db-resenas
+    networks:
+      - marana-net
+
+  notificaciones:
+    build: ./services/notificaciones
+    container_name: mc-notificaciones
+    environment:
+      MONGO_HOST: db-notificaciones
+      MONGO_DB: notificaciones
+      RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - db-notificaciones
+      - rabbitmq
+    networks:
+      - marana-net
+
+  clases:
+    build: ./services/clases
+    container_name: mc-clases
+    environment:
+      DB_HOST: db-clases
+      DB_NAME: clases
+      DB_USER: mc_user
+      DB_PASSWORD: mc_pass
+    depends_on:
+      - db-clases
+    networks:
+      - marana-net
+
+  reportes:
+    build: ./services/reportes
+    container_name: mc-reportes
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - rabbitmq
+    networks:
+      - marana-net
+
+  # ---------- BASES DE DATOS (una por microservicio) ----------
+  db-usuarios:
+    image: postgres:16-alpine
+    container_name: mc-db-usuarios
+    environment:
+      POSTGRES_DB: usuarios
+      POSTGRES_USER: mc_user
+      POSTGRES_PASSWORD: mc_pass
+    volumes:
+      - vol-db-usuarios:/var/lib/postgresql/data
+    networks:
+      - marana-net
+
+  db-productos:
+    image: postgres:16-alpine
+    container_name: mc-db-productos
+    environment:
+      POSTGRES_DB: productos
+      POSTGRES_USER: mc_user
+      POSTGRES_PASSWORD: mc_pass
+    volumes:
+      - vol-db-productos:/var/lib/postgresql/data
+    networks:
+      - marana-net
+
+  db-inventario:
+    image: postgres:16-alpine
+    container_name: mc-db-inventario
+    environment:
+      POSTGRES_DB: inventario
+      POSTGRES_USER: mc_user
+      POSTGRES_PASSWORD: mc_pass
+    volumes:
+      - vol-db-inventario:/var/lib/postgresql/data
+    networks:
+      - marana-net
+
+  db-pedidos:
+    image: postgres:16-alpine
+    container_name: mc-db-pedidos
+    environment:
+      POSTGRES_DB: pedidos
+      POSTGRES_USER: mc_user
+      POSTGRES_PASSWORD: mc_pass
+    volumes:
+      - vol-db-pedidos:/var/lib/postgresql/data
+    networks:
+      - marana-net
+
+  db-pagos:
+    image: postgres:16-alpine
+    container_name: mc-db-pagos
+    environment:
+      POSTGRES_DB: pagos
+      POSTGRES_USER: mc_user
+      POSTGRES_PASSWORD: mc_pass
+    volumes:
+      - vol-db-pagos:/var/lib/postgresql/data
+    networks:
+      - marana-net
+
+  db-clases:
+    image: postgres:16-alpine
+    container_name: mc-db-clases
+    environment:
+      POSTGRES_DB: clases
+      POSTGRES_USER: mc_user
+      POSTGRES_PASSWORD: mc_pass
+    volumes:
+      - vol-db-clases:/var/lib/postgresql/data
+    networks:
+      - marana-net
+
+  db-resenas:
+    image: mongo:7
+    container_name: mc-db-resenas
+    volumes:
+      - vol-db-resenas:/data/db
+    networks:
+      - marana-net
+
+  db-notificaciones:
+    image: mongo:7
+    container_name: mc-db-notificaciones
+    volumes:
+      - vol-db-notificaciones:/data/db
+    networks:
+      - marana-net
+
+  # ---------- INFRAESTRUCTURA COMPARTIDA ----------
+  redis:
+    image: redis:7-alpine
+    container_name: mc-redis
+    networks:
+      - marana-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: mc-rabbitmq
+    ports:
+      - "15672:15672"   # panel de administración
+    networks:
+      - marana-net
+
+  # ---------- MONITOREO ----------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mc-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - marana-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mc-grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - marana-net
+
+networks:
+  marana-net:
+    driver: bridge
+
+volumes:
+  vol-db-usuarios:
+  vol-db-productos:
+  vol-db-inventario:
+  vol-db-pedidos:
+  vol-db-pagos:
+  vol-db-clases:
+  vol-db-resenas:
+  vol-db-notificaciones:
